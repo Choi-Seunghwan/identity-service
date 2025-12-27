@@ -2,9 +2,6 @@ from fastapi import APIRouter, Depends, status
 from app.auth.service import AuthService
 from app.auth.di import get_auth_service
 from app.auth.dto import LoginDto, TokenDto, AccessTokenDto, RefreshTokenDto
-from app.user.service import UserService
-from app.user.di import get_user_service
-from app.core.security import verify_password
 from app.core.exceptions import UnauthorizedException
 
 
@@ -12,7 +9,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenDto)
-async def login(dto: LoginDto, auth_service: AuthService = Depends()):
+async def login(dto: LoginDto, auth_service: AuthService = Depends(get_auth_service)):
     """로그인"""
     return await auth_service.login(dto)
 
