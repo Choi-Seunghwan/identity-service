@@ -42,6 +42,29 @@ class AuthService:
             access_token=access_token, refresh_token=refresh_token_value, token_type="bearer"
         )
 
+    async def login_with_user_id(self, user_id: str, email: str) -> TokenDto:
+        """
+        이미 인증된 사용자로 토큰 발급 (소셜 로그인용)
+        비밀번호 검증 없이 user_id로 바로 토큰 발급
+        """
+        # Access Token 생성
+        access_token = create_access_token(data={"sub": user_id, "email": email})
+
+        # Refresh Token 생성 및 저장
+        refresh_token_value = create_refresh_token(data={"sub": user_id})
+
+        refresh_token_entity = RefreshToken(
+            id=str(uuid.uuid4()),
+            token=refresh_token_value,
+            user_id=user_id,
+            expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
+        )
+        await self.refresh_token_repository.create(refresh_token_entity)
+
+        return TokenDto(
+            access_token=access_token, refresh_token=refresh_token_value, token_type="bearer"
+        )
+
     async def refresh(self, dto: RefreshTokenDto) -> AccessTokenDto:
         """Access Token 갱신"""
         # Refresh Token 검증
