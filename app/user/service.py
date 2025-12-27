@@ -98,3 +98,31 @@ class UserService:
             raise UnauthorizedException(detail="User account is inactive")
 
         return UserDto.model_validate(user)
+
+    async def create_social_user(self, email: str, username: str | None = None) -> UserDto:
+        """소셜 로그인용 사용자 생성 (비밀번호 없음)"""
+        # 이메일 중복 체크
+        existing = await self.user_repository.find_by_email(email)
+        if existing:
+            # 이미 존재하는 경우 해당 사용자 반환
+            return UserDto.model_validate(existing)
+
+        # User 엔티티 생성 (비밀번호 없음)
+        user = User(
+            id=str(uuid.uuid4()),
+            email=email,
+            hashed_password=None,  # 소셜 로그인만 사용
+            username=username,
+            is_active=True,
+            is_verified=True,  # 소셜 로그인은 이미 검증됨
+        )
+
+        created_user = await self.user_repository.create(user)
+        return UserDto.model_validate(created_user)
+
+    async def has_password(self, user_id: str) -> bool:
+        """사용자가 비밀번호를 설정했는지 확인"""
+        user = await self.user_repository.find_by_id(user_id)
+        if not user:
+            raise NotFoundException(detail="User not found")
+        return user.hashed_password is not None
