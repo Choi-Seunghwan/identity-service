@@ -1,17 +1,39 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Response
 from app.auth.service import AuthService
 from app.auth.di import get_auth_service
 from app.auth.dto import LoginDto, TokenDto, AccessTokenDto, RefreshTokenDto
 from app.core.exceptions import UnauthorizedException
+from datetime import UTC, datetime, timedelta
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenDto)
-async def login(dto: LoginDto, auth_service: AuthService = Depends(get_auth_service)):
-    """로그인"""
-    return await auth_service.login(dto)
+async def login(
+    dto: LoginDto, response: Response, auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    로그인
+    SSO 플로우를 위해 쿠키에도 토큰 저장
+    """
+    token_dto = await auth_service.login(dto)
+
+    # SSO 플로우를 위해 쿠키에도 토큰 저장
+    # HttpOnly 쿠키로 설정하면 XSS 공격에 더 안전하지만,
+    # 현재는 JavaScript에서도 접근 가능하도록 설정 (SameSite=Lax)
+    expires = datetime.now(UTC) + timedelta(minutes=30)
+    response.set_cookie(
+        key="access_token",
+        value=token_dto.access_token,
+        expires=expires,
+        path="/",
+        httponly=False,  # SSO 플로우를 위해 false (JavaScript 접근 필요)
+        samesite="lax",
+        secure=False,  # 개발 환경에서는 false, 프로덕션에서는 true 권장
+    )
+
+    return token_dto
 
 
 @router.post("/refresh", response_model=AccessTokenDto)

@@ -80,7 +80,7 @@ async def authorize(
     if not current_user_id:
         # 로그인하지 않았으면 로그인 페이지로 리다이렉트
         # authorize 파라미터들을 URL 인코딩하여 전달
-        from urllib.parse import urlencode
+        from urllib.parse import urlencode, quote
 
         authorize_params = {
             "response_type": response_type,
@@ -95,8 +95,10 @@ async def authorize(
         if code_challenge_method:
             authorize_params["code_challenge_method"] = code_challenge_method
 
+        # authorize URL 생성 (한 번만 인코딩)
         authorize_url = f"/api/oauth2/authorize?{urlencode(authorize_params)}"
-        login_url = f"/api/oauth2/login?redirect={urlencode({'url': authorize_url})}"
+        # redirect 파라미터로 전달 (quote로 한 번만 인코딩)
+        login_url = f"/api/oauth2/login?redirect={quote(authorize_url, safe='')}"
         return RedirectResponse(url=login_url)
 
     # Authorization Code 생성
@@ -208,13 +210,13 @@ async def openid_configuration(sso_service: SSOService = Depends(get_sso_service
 
 
 @router.get("/login")
-async def login_page(url: Optional[str] = Query(None, alias="redirect")):
+async def login_page(redirect: Optional[str] = Query(None)):
     """
     IDP 로그인 페이지
-    GET /oauth2/login?url=xxx (또는 redirect=xxx)
+    GET /oauth2/login?redirect=xxx
 
     SSO 로그인 시 사용되는 로그인 페이지
-    로그인 성공 후 url 파라미터로 지정된 경로로 리다이렉트
+    로그인 성공 후 redirect 파라미터로 지정된 경로로 리다이렉트
     """
     # HTML 파일 읽기
     templates_dir = Path(__file__).parent / "templates"

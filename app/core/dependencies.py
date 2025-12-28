@@ -1,12 +1,10 @@
 from typing import Optional
-from fastapi import Header
+from fastapi import Header, Cookie
 from app.core.exceptions import UnauthorizedException
 from app.core.security import verify_token
 
 
-async def get_token_from_header(
-    authorization: Optional[str] = Header(None)
-) -> str:
+async def get_token_from_header(authorization: Optional[str] = Header(None)) -> str:
     """Authorization 헤더에서 토큰 추출"""
     if not authorization:
         raise UnauthorizedException(detail="Authorization header missing")
@@ -19,9 +17,7 @@ async def get_token_from_header(
     return parts[1]
 
 
-async def get_current_user_id_from_token(
-    authorization: Optional[str] = Header(None)
-) -> str:
+async def get_current_user_id_from_token(authorization: Optional[str] = Header(None)) -> str:
     """JWT에서 사용자 ID 추출"""
     token = await get_token_from_header(authorization)
 
@@ -36,7 +32,7 @@ async def get_current_user_id_from_token(
 
 
 async def get_optional_token_from_header(
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
 ) -> Optional[str]:
     """선택적 토큰 추출 (없어도 OK)"""
     if not authorization:
@@ -53,10 +49,19 @@ async def get_optional_token_from_header(
 
 
 async def get_optional_user_id_from_token(
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None), access_token: Optional[str] = Cookie(None)
 ) -> Optional[str]:
-    """선택적 사용자 ID 추출 (토큰이 없어도 OK)"""
+    """
+    선택적 사용자 ID 추출 (토큰이 없어도 OK)
+    Authorization 헤더 또는 쿠키에서 토큰 확인
+    """
+    # 먼저 Authorization 헤더 확인
     token = await get_optional_token_from_header(authorization)
+
+    # 헤더에 없으면 쿠키 확인
+    if not token and access_token:
+        token = access_token
+
     if not token:
         return None
 

@@ -140,9 +140,11 @@
 
       // URL에서 redirect 파라미터 추출
       const urlParams = new URLSearchParams(window.location.search);
-      // redirect 파라미터가 'url' 키로 전달됨 (authorize에서 인코딩된 형태)
-      const redirectUrl =
-        urlParams.get("url") || urlParams.get("redirect") || "/";
+      // redirect 파라미터 추출 (디코딩 필요)
+      let redirectUrl = urlParams.get("redirect");
+      if (!redirectUrl) {
+        redirectUrl = "/";
+      }
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -171,6 +173,16 @@
             // 로그인 성공 - 토큰 저장
             localStorage.setItem("access_token", data.access_token);
             localStorage.setItem("refresh_token", data.refresh_token);
+
+            // 쿠키에도 토큰 저장 (SSO 플로우용)
+            // HttpOnly 쿠키는 JavaScript로 설정할 수 없으므로,
+            // 서버에서 쿠키를 설정하도록 수정 필요
+            // 현재는 document.cookie로 설정 (보안상 완벽하지 않지만 동작함)
+            const expires = new Date();
+            expires.setTime(expires.getTime() + 30 * 60 * 1000); // 30분
+            document.cookie = `access_token=${
+              data.access_token
+            }; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
 
             // 원래 요청한 authorize 엔드포인트로 리다이렉트
             window.location.href = redirectUrl;
