@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, Query, Form, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Query, Form, Header, status
+from fastapi.responses import RedirectResponse, HTMLResponse
+from pathlib import Path
 from typing import Optional
 from app.sso.dto import (
     CreateClientDto,
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/oauth2", tags=["sso"])
 # Client 관리 엔드포인트 (관리자용)
 # ============================================
 
+
 @router.post("/clients", response_model=ClientDto, status_code=status.HTTP_201_CREATED)
 async def create_client(
     dto: CreateClientDto,
@@ -37,6 +39,7 @@ async def create_client(
 # ============================================
 # OAuth2 표준 엔드포인트
 # ============================================
+
 
 @router.get("/authorize")
 async def authorize(
@@ -54,7 +57,7 @@ async def authorize(
     """
     OAuth2 Authorization 엔드포인트
     GET /oauth2/authorize?response_type=code&client_id=xxx&redirect_uri=xxx&scope=xxx&state=xxx
-    
+
     플로우:
     1. 사용자가 로그인하지 않았으면 → 로그인 페이지로 리다이렉트
     2. 사용자가 로그인했으면 → Authorization Code 생성 후 redirect_uri로 리다이렉트
@@ -76,8 +79,24 @@ async def authorize(
     # 사용자 인증 확인
     if not current_user_id:
         # 로그인하지 않았으면 로그인 페이지로 리다이렉트
-        # 실제로는 로그인 페이지 URL로 리다이렉트하고, 로그인 후 다시 이 엔드포인트로 돌아옴
-        login_url = f"/api/auth/login?redirect=/api/oauth2/authorize?response_type={response_type}&client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&state={state or ''}"
+        # authorize 파라미터들을 URL 인코딩하여 전달
+        from urllib.parse import urlencode
+
+        authorize_params = {
+            "response_type": response_type,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+        }
+        if state:
+            authorize_params["state"] = state
+        if code_challenge:
+            authorize_params["code_challenge"] = code_challenge
+        if code_challenge_method:
+            authorize_params["code_challenge_method"] = code_challenge_method
+
+        authorize_url = f"/api/oauth2/authorize?{urlencode(authorize_params)}"
+        login_url = f"/api/oauth2/login?redirect={urlencode({'url': authorize_url})}"
         return RedirectResponse(url=login_url)
 
     # Authorization Code 생성
@@ -113,7 +132,7 @@ async def token(
     """
     OAuth2 Token 엔드포인트
     POST /oauth2/token
-    
+
     Authorization Code를 Access Token으로 교환
     또는 Refresh Token으로 새 Access Token 발급
     """
@@ -128,36 +147,36 @@ async def token(
             code_verifier=code_verifier,
         )
         return await sso_service.exchange_code_for_tokens(dto)
-    
+
     elif grant_type == "refresh_token":
         # Refresh Token 갱신은 기존 AuthService 사용
         # TODO: SSO Service에 refresh 메서드 추가 필요
         raise BadRequestException(detail="refresh_token grant type not implemented yet")
-    
+
     else:
         raise BadRequestException(detail=f"Unsupported grant_type: {grant_type}")
 
 
 @router.get("/userinfo", response_model=UserInfoResponseDto)
 async def userinfo(
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     sso_service: SSOService = Depends(get_sso_service),
 ):
     """
     OpenID Connect UserInfo 엔드포인트
     GET /oauth2/userinfo
-    
+
     Authorization: Bearer <access_token> 헤더 필요
     """
     # Authorization 헤더에서 토큰 추출
     if not authorization:
         raise BadRequestException(detail="Authorization header required")
-    
+
     if not authorization.startswith("Bearer "):
         raise BadRequestException(detail="Invalid authorization header format")
-    
+
     access_token = authorization.replace("Bearer ", "")
-    
+
     return await sso_service.get_user_info(access_token)
 
 
@@ -166,7 +185,7 @@ async def jwks(sso_service: SSOService = Depends(get_sso_service)):
     """
     JSON Web Key Set (JWKS) 엔드포인트
     GET /oauth2/jwks
-    
+
     JWT 검증을 위한 공개키 제공
     """
     return sso_service.get_jwks()
@@ -177,8 +196,29 @@ async def openid_configuration(sso_service: SSOService = Depends(get_sso_service
     """
     OpenID Connect Discovery 엔드포인트
     GET /.well-known/openid-configuration
-    
+
     OIDC 메타데이터 제공
     """
     return sso_service.get_openid_configuration()
 
+
+# ============================================
+# IDP 로그인 페이지
+# ============================================
+
+
+@router.get("/login")
+async def login_page(url: Optional[str] = Query(None, alias="redirect")):
+    """
+    IDP 로그인 페이지
+    GET /oauth2/login?url=xxx (또는 redirect=xxx)
+
+    SSO 로그인 시 사용되는 로그인 페이지
+    로그인 성공 후 url 파라미터로 지정된 경로로 리다이렉트
+    """
+    # HTML 파일 읽기
+    templates_dir = Path(__file__).parent / "templates"
+    html_file = templates_dir / "login.html"
+    html_content = html_file.read_text(encoding="utf-8")
+
+    return HTMLResponse(content=html_content)

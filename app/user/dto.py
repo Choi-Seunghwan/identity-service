@@ -12,7 +12,12 @@ class UserBaseDto(BaseModel):
 
 # 회원가입 요청 DTO
 class CreateUserDto(UserBaseDto):
-    password: str = Field(..., min_length=8, max_length=100)
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=100,
+        description="Password must be 8-100 characters",
+    )
 
 
 # 사용자 응답 DTO
@@ -36,4 +41,9 @@ class UpdateUserDto(BaseModel):
 # 비밀번호 변경 DTO
 class ChangePasswordDto(BaseModel):
     old_password: str
-    new_password: str = Field(..., min_length=8, max_length=100)
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=100,
+        description="Password must be 8-100 characters",
+    )

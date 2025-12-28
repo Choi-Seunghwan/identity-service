@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>로그인 - Identity Service</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+          "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
+          "Helvetica Neue", sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .login-container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        padding: 40px;
+        width: 100%;
+        max-width: 400px;
+      }
+      h1 {
+        color: #333;
+        margin-bottom: 10px;
+        font-size: 24px;
+      }
+      .subtitle {
+        color: #666;
+        margin-bottom: 30px;
+        font-size: 14px;
+      }
+      .form-group {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        color: #333;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      input {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+      }
+      input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+      .error {
+        color: #e74c3c;
+        font-size: 14px;
+        margin-top: 10px;
+        display: none;
+      }
+      .error.show {
+        display: block;
+      }
+      button {
+        width: 100%;
+        padding: 12px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+      button:hover {
+        background: #5568d3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .footer {
+        margin-top: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-container">
+      <h1>로그인</h1>
+      <p class="subtitle">Identity Service에 로그인하세요</p>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="email">이메일</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            required
+            autocomplete="email"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">비밀번호</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            required
+            autocomplete="current-password"
+          />
+        </div>
+
+        <div class="error" id="errorMessage"></div>
+
+        <button type="submit" id="submitBtn">로그인</button>
+      </form>
+
+      <div class="footer">Identity Service SSO</div>
+    </div>
+
+    <script>
+      const form = document.getElementById("loginForm");
+      const errorDiv = document.getElementById("errorMessage");
+      const submitBtn = document.getElementById("submitBtn");
+
+      // URL에서 redirect 파라미터 추출
+      const urlParams = new URLSearchParams(window.location.search);
+      // redirect 파라미터가 'url' 키로 전달됨 (authorize에서 인코딩된 형태)
+      const redirectUrl =
+        urlParams.get("url") || urlParams.get("redirect") || "/";
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        // 에러 메시지 숨기기
+        errorDiv.classList.remove("show");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "로그인 중...";
+
+        try {
+          // 로그인 API 호출
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email, password }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            // 로그인 성공 - 토큰 저장
+            localStorage.setItem("access_token", data.access_token);
+            localStorage.setItem("refresh_token", data.refresh_token);
+
+            // 원래 요청한 authorize 엔드포인트로 리다이렉트
+            window.location.href = redirectUrl;
+          } else {
+            // 로그인 실패
+            errorDiv.textContent = data.detail || "로그인 실패";
+            errorDiv.classList.add("show");
+            submitBtn.disabled = false;
+            submitBtn.textContent = "로그인";
+          }
+        } catch (error) {
+          errorDiv.textContent = "로그인 중 오류가 발생했습니다.";
+          errorDiv.classList.add("show");
+          submitBtn.disabled = false;
+          submitBtn.textContent = "로그인";
+        }
+      });
+    </script>
+  </body>
+</html>
