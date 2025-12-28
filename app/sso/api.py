@@ -224,3 +224,43 @@ async def login_page(redirect: Optional[str] = Query(None)):
     html_content = html_file.read_text(encoding="utf-8")
 
     return HTMLResponse(content=html_content)
+
+
+@router.get("/social-callback")
+async def social_callback(
+    access_token: str = Query(...),
+    refresh_token: str = Query(...),
+    redirect: str = Query(...),
+):
+    """
+    소셜 로그인 콜백 처리 페이지
+    GET /oauth2/social-callback?access_token=xxx&refresh_token=xxx&redirect=xxx
+
+    소셜 로그인 후 토큰을 받아서 저장하고 원래 URL로 리다이렉트
+    """
+    # HTML 페이지로 토큰 저장 및 리다이렉트
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <title>로그인 처리 중...</title>
+    </head>
+    <body>
+        <script>
+            // 토큰 저장
+            localStorage.setItem("access_token", "{access_token}");
+            localStorage.setItem("refresh_token", "{refresh_token}");
+            
+            // 쿠키에도 토큰 저장
+            const expires = new Date();
+            expires.setTime(expires.getTime() + 30 * 60 * 1000); // 30분
+            document.cookie = `access_token={access_token}; expires=${{expires.toUTCString()}}; path=/; SameSite=Lax`;
+            
+            // 원래 URL로 리다이렉트
+            window.location.href = "{redirect}";
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
