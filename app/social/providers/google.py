@@ -61,6 +61,13 @@ class GoogleOAuthProvider:
                 raise BadRequestException(detail="failed to get user info")
 
             data = response.json()
+
+            provider_user_id = data.get("id") or data.get("sub")
+            if not provider_user_id:
+                raise BadRequestException(detail="user id not found in google response")
+
             return OAuthUserInfo(
-                provider_user_id=data.get("id", email=data.get("email"), name=data.get("name"))
+                provider_user_id=str(provider_user_id),
+                email=data.get("email"),
+                name=data.get("name"),
             )
