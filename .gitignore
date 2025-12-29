@@ -81,3 +81,8 @@ alembic/versions/*.pyc
 
 # Test Clients
 test-clients/
+
+# RSA Keys (보안상 Git에 커밋하지 않음)
+keys/
+*.pem
+!*.pem.example

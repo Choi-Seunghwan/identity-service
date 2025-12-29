@@ -4,8 +4,15 @@ import bcrypt
 import hashlib
 from app.config import settings
 from jose import JWTError, jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 from app.core.exceptions import UnauthorizedException
+from app.core.jwt_keys import (
+    load_rsa_private_key,
+    load_rsa_public_key,
+)
 
 
 def hash_password(password: str) -> str:
@@ -38,27 +45,82 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 
+def _get_signing_key():
+    """JWT 서명에 사용할 키 반환 (알고리즘에 따라 다름)"""
+    if settings.algorithm == "RS256":
+        # RSA Private Key 로드
+        private_key = None
+
+        # 환경 변수에서 직접 키 로드 시도
+        if settings.rsa_private_key:
+            private_key = serialization.load_pem_private_key(
+                settings.rsa_private_key.encode("utf-8"), password=None, backend=default_backend()
+            )
+        else:
+            # 파일에서 키 로드
+            private_key = load_rsa_private_key(settings.rsa_private_key_path)
+
+        if not private_key:
+            raise ValueError(
+                "RSA private key not found. "
+                "Please set RSA_PRIVATE_KEY or RSA_PRIVATE_KEY_PATH in .env"
+            )
+        return private_key
+    else:
+        # HS256: 대칭키 사용
+        return settings.secret_key
+
+
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
     to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    signing_key = _get_signing_key()
+    return jwt.encode(to_encode, signing_key, algorithm=settings.algorithm)
 
 
 def create_refresh_token(data: Dict[str, Any]) -> str:
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    signing_key = _get_signing_key()
+    return jwt.encode(to_encode, signing_key, algorithm=settings.algorithm)
+
+
+def _get_verification_key():
+    """JWT 검증에 사용할 키 반환 (알고리즘에 따라 다름)"""
+    if settings.algorithm == "RS256":
+        # RSA Public Key 로드
+        public_key = None
+
+        # 환경 변수에서 직접 키 로드 시도
+        if settings.rsa_public_key:
+            public_key = serialization.load_pem_public_key(
+                settings.rsa_public_key.encode("utf-8"), backend=default_backend()
+            )
+        else:
+            # 파일에서 키 로드
+            public_key = load_rsa_public_key(settings.rsa_public_key_path)
+
+        if not public_key:
+            raise ValueError(
+                "RSA public key not found. "
+                "Please set RSA_PUBLIC_KEY or RSA_PUBLIC_KEY_PATH in .env"
+            )
+        return public_key
+    else:
+        # HS256: 대칭키 사용
+        return settings.secret_key
 
 
 def decode_token(token: str) -> Dict[str, Any]:
     try:
-        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        verification_key = _get_verification_key()
+        return jwt.decode(token, verification_key, algorithms=[settings.algorithm])
     except JWTError:
-        raise UnauthorizedException(detail="Could ont validate credentials")
+        raise UnauthorizedException(detail="Could not validate credentials")
 
 
 def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:

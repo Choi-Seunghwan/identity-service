@@ -74,9 +74,7 @@ class SSOService:
 
         return code
 
-    async def exchange_code_for_tokens(
-        self, dto: TokenRequestDto
-    ) -> TokenResponseDto:
+    async def exchange_code_for_tokens(self, dto: TokenRequestDto) -> TokenResponseDto:
         """
         Authorization Code를 Access Token으로 교환
         OAuth2 표준: POST /oauth2/token
@@ -88,9 +86,7 @@ class SSOService:
             raise BadRequestException(detail="code is required")
 
         # Client 검증
-        client = await self.client_service.verify_client_secret(
-            dto.client_id, dto.client_secret
-        )
+        client = await self.client_service.verify_client_secret(dto.client_id, dto.client_secret)
 
         # Authorization Code 조회
         auth_code = await self.auth_code_repository.find_by_code(dto.code)
@@ -121,9 +117,11 @@ class SSOService:
             # code_verifier로 code_challenge 재계산
             if auth_code.code_challenge_method == "S256":
                 # SHA256 해시
-                challenge = base64.urlsafe_b64encode(
-                    hashlib.sha256(dto.code_verifier.encode()).digest()
-                ).decode().rstrip("=")
+                challenge = (
+                    base64.urlsafe_b64encode(hashlib.sha256(dto.code_verifier.encode()).digest())
+                    .decode()
+                    .rstrip("=")
+                )
             else:  # plain
                 challenge = dto.code_verifier
 
@@ -163,9 +161,7 @@ class SSOService:
             id_token=id_token,
         )
 
-    def _create_id_token(
-        self, user, client: OAuth2Client, scopes: str
-    ) -> Optional[str]:
+    def _create_id_token(self, user, client: OAuth2Client, scopes: str) -> Optional[str]:
         """
         OpenID Connect ID Token 생성
         """
@@ -199,7 +195,10 @@ class SSOService:
             payload["email"] = user.email
 
         # ID Token 서명
-        return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+        from app.core.security import _get_signing_key
+
+        signing_key = _get_signing_key()
+        return jwt.encode(payload, signing_key, algorithm=settings.algorithm)
 
     async def get_user_info(self, access_token: str) -> UserInfoResponseDto:
         """
@@ -233,24 +232,43 @@ class SSOService:
         GET /oauth2/jwks
         JWT 검증을 위한 공개키 제공
         """
-        # HS256은 대칭키이므로 공개키가 없음
-        # 실제 운영 환경에서는 RS256 (비대칭키) 사용 권장
-        # 여기서는 간단한 예시만 제공
-        
-        # HS256의 경우, 공개키가 없으므로 빈 키셋 반환
-        # 또는 secret_key를 기반으로 한 키 정보 제공 (보안상 권장하지 않음)
-        return {
-            "keys": [
-                {
-                    "kty": "oct",  # Octet sequence (대칭키)
-                    "alg": settings.algorithm,
-                    "use": "sig",  # signature
-                    # 실제로는 공개키를 제공해야 하지만, HS256은 대칭키이므로
-                    # 클라이언트는 secret_key를 알고 있어야 함
-                    # 운영 환경에서는 RS256 사용 권장
-                }
-            ]
-        }
+        if settings.algorithm == "RS256":
+            # RSA Public Key 로드
+            from app.core.jwt_keys import load_rsa_public_key, get_jwk_from_public_key
+
+            public_key = None
+            if settings.rsa_public_key:
+                from cryptography.hazmat.primitives import serialization
+                from cryptography.hazmat.backends import default_backend
+
+                public_key = serialization.load_pem_public_key(
+                    settings.rsa_public_key.encode("utf-8"), backend=default_backend()
+                )
+            else:
+                public_key = load_rsa_public_key(settings.rsa_public_key_path)
+
+            if not public_key:
+                # 키가 없으면 빈 키셋 반환
+                return {"keys": []}
+
+            # JWK 형식으로 변환
+            jwk_dict = get_jwk_from_public_key(public_key, kid="default")
+            return {"keys": [jwk_dict]}
+        else:
+            # HS256: 대칭키이므로 공개키 제공 불가
+            # 운영 환경에서는 RS256 사용 권장
+            return {
+                "keys": [
+                    {
+                        "kty": "oct",  # Octet sequence (대칭키)
+                        "alg": settings.algorithm,
+                        "use": "sig",
+                        # 주의: HS256은 대칭키이므로 공개키를 제공할 수 없음
+                        # 다른 서비스에서 토큰 검증을 하려면 secret_key를 공유해야 함 (보안상 권장하지 않음)
+                        # MSA 환경에서는 RS256 사용을 강력히 권장
+                    }
+                ]
+            }
 
     def get_openid_configuration(self) -> dict:
         """
@@ -258,7 +276,7 @@ class SSOService:
         GET /.well-known/openid-configuration
         """
         base_url = settings.issuer.rstrip("/")
-        
+
         return {
             "issuer": settings.issuer,
             "authorization_endpoint": f"{base_url}/oauth2/authorize",
@@ -282,4 +300,3 @@ class SSOService:
                 "preferred_username",
             ],
         }
-
